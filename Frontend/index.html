@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tech Future - Visualizador BI</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;600;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        /* --- ESTILOS GERAIS --- */
+        body { margin: 0; overflow: hidden; background: radial-gradient(circle at center, #1a1f29 0%, #000 100%); font-family: 'Montserrat', sans-serif; user-select: none; }
+        
+        /* Cabeçalho */
+        #header-ui { position: absolute; top: 30px; width: 100%; text-align: center; pointer-events: none; z-index: 10; }
+        h1 { margin: 0; font-size: 2.5rem; color: #fff; letter-spacing: 2px; text-shadow: 0 0 20px rgba(0, 210, 255, 0.5); }
+        h1 span { color: #00d2ff; font-weight: 800; }
+        
+        /* Footer Interativo */
+        #footer-ui { 
+            position: absolute; bottom: 0; width: 100%; height: 60px; 
+            background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
+            display: flex; justify-content: center; align-items: center;
+            color: #aaa; font-size: 0.9rem; pointer-events: none; z-index: 10;
+            text-transform: uppercase; letter-spacing: 1px;
+        }
+        #footer-text span { color: #00d2ff; font-weight: bold; }
+
+        /* Tooltip (Balãozinho) */
+        #tooltip {
+            position: absolute; display: none; pointer-events: none;
+            background: rgba(10, 15, 20, 0.9); border: 1px solid #00d2ff;
+            color: #fff; padding: 8px 12px; border-radius: 4px;
+            font-size: 0.8rem; font-weight: 600; text-transform: uppercase;
+            box-shadow: 0 0 15px rgba(0, 210, 255, 0.3); z-index: 20;
+            transform: translate(15px, 15px); /* Afasta um pouco do mouse */
+        }
+
+        /* Modal do Dashboard */
+        #dashboard-modal {
+            display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 85%; height: 80%; max-width: 1000px;
+            background: rgba(15, 20, 30, 0.98); border: 1px solid #333;
+            box-shadow: 0 0 50px rgba(0,0,0,0.8); border-radius: 10px; z-index: 1000; padding: 40px; color: white;
+            overflow-y: auto; backdrop-filter: blur(10px);
+        }
+        .close-btn { position: absolute; top: 20px; right: 25px; cursor: pointer; font-size: 2rem; color: #ff5555; transition: 0.2s; }
+        .close-btn:hover { color: #fff; }
+        
+        /* Grid e Gráficos */
+        .grid { display: grid; gap: 20px; margin-top: 20px; }
+        .grid-2 { grid-template-columns: 1fr 1fr; }
+        .card { background: rgba(255,255,255,0.03); padding: 20px; border-radius: 8px; border: 1px solid #333; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9rem; }
+        th, td { padding: 10px; border-bottom: 1px solid #444; text-align: left; }
+        th { color: #888; }
+        .chart-box { position: relative; height: 250px; }
+    </style>
+</head>
+<body>
+
+    <div id="header-ui">
+        <h1>TECH <span>FUTURE</span></h1>
+        <p style="color:#666; font-size:0.8rem; text-transform:uppercase; letter-spacing:3px;">Visualizador BI</p>
+    </div>
+
+    <div id="tooltip"></div>
+
+    <div id="footer-ui">
+        <p id="footer-text">Rotacione o modelo e <span>clique nas áreas</span> para ver os dados</p>
+    </div>
+
+    <div id="dashboard-modal">
+        <span class="close-btn" onclick="fecharModal()">×</span>
+        <h2 id="modal-title" style="border-bottom: 2px solid #333; padding-bottom: 10px; color:#00d2ff;">DASHBOARD</h2>
+        <div id="modal-content"></div>
+    </div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
+        import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- CONFIGURAÇÃO DAS ZONAS ---
+        // --- CONFIGURAÇÃO DAS ZONAS (CORRIGIDO) ---
+        const ZONES = {
+            fabrica: {
+                id: 'fabrica',
+                label: 'Fábrica / Produção',
+                url: 'http://localhost:5062/api/Dashboard/fabrica', 
+                names: [
+                    // Nomes específicos da fábrica
+                    "Cylinder.001", "Cylinder",
+                    "Cube.006", "Cube.007", "Cube.010", "Cube.011", 
+                    "Cube.012", "Cube.013", "Cube.001", "Cube.002", 
+                    "Cube.004", "janela", "Cube.005", "Cube.014", "Cube.003"
+                ] 
+            },
+            logistica: {
+                id: 'logistica',
+                label: 'Fornecedores',
+                url: 'http://localhost:5062/api/Dashboard/logistica',
+                // REMOVI "Cube" e "Cylinder" daqui para não puxar o prédio junto
+                names: ["Caminhão"] 
+            },
+            geral: {
+                id: 'geral',
+                label: 'Vendas da Techfuture',
+                url: 'http://localhost:5062/api/Dashboard/geral',
+                names: ["Cube.008", "Text"]
+            }
+        };
+
+        // --- CENA THREE.JS ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 5000);
+        camera.position.set(70, 60, 80);
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+        
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 0.5;
+        
+        scene.add(new THREE.AmbientLight(0xffffff, 2.0));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 2.0);
+        dirLight.position.set(50, 100, 50);
+        scene.add(dirLight);
+
+        let interactiveObjects = []; 
+        let activeZone = null;
+        
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        // Elementos UI
+        const tooltip = document.getElementById('tooltip');
+        const footerText = document.getElementById('footer-text');
+
+        // --- CARREGAMENTO DO MODELO ---
+        const manager = new THREE.LoadingManager();
+        const mtlLoader = new MTLLoader(manager);
+        mtlLoader.setPath('assets/');
+        mtlLoader.setResourcePath('assets/textures/');
+
+        mtlLoader.load('techfuture.mtl', (materials) => {
+            materials.preload();
+            const objLoader = new OBJLoader(manager);
+            objLoader.setMaterials(materials);
+            objLoader.setPath('assets/');
+
+            objLoader.load('techfuture.obj', (object) => {
+                // Centralizar
+                const box = new THREE.Box3().setFromObject(object);
+                object.position.sub(box.getCenter(new THREE.Vector3()));
+
+                // Arrays para ajudar a criar a hitbox do caminhão
+                let logisticaParts = [];
+
+                object.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                        
+                        let foundZone = null;
+                        const nomeObjeto = child.name.toLowerCase();
+                        
+                        for (let key in ZONES) {
+                            if (ZONES[key].names.some(n => nomeObjeto.includes(n.toLowerCase()))) {
+                                foundZone = ZONES[key];
+                                break;
+                            }
+                        }
+
+                        if (foundZone) {
+                            child.userData.zone = foundZone;
+                            child.userData.yBase = child.position.y;
+                            child.userData.yTarget = child.position.y;
+                            interactiveObjects.push(child);
+
+                            // Guarda peças do caminhão
+                            if (foundZone.id === 'logistica') {
+                                logisticaParts.push(child);
+                            }
+                        } 
+                    }
+                });
+
+                // --- CRIAÇÃO DA HITBOX AUMENTADA (CAMINHÃO) ---
+                if (logisticaParts.length > 0) {
+                    const logisticaBox = new THREE.Box3();
+                    logisticaParts.forEach(part => logisticaBox.expandByObject(part));
+                    
+                    const size = new THREE.Vector3();
+                    logisticaBox.getSize(size);
+                    const center = new THREE.Vector3();
+                    logisticaBox.getCenter(center);
+
+                    // Cria um cubo invisível cobrindo todo o caminhão + uma margem extra
+                    const geometry = new THREE.BoxGeometry(size.x + 5, size.y + 5, size.z + 5); 
+                    const material = new THREE.MeshBasicMaterial({ visible: false, color: 0xff0000, transparent: true, opacity: 0.3 }); // Mude visible para true se quiser ver a hitbox
+                    const hitbox = new THREE.Mesh(geometry, material);
+                    
+                    hitbox.position.copy(center);
+                    hitbox.userData.zone = ZONES.logistica; // Atribui a mesma zona
+                    hitbox.userData.isHitbox = true; // Flag para ignorar na animação de subida
+                    
+                    scene.add(hitbox);
+                    interactiveObjects.push(hitbox); // Adiciona na lista de clicáveis
+                }
+
+                scene.add(object);
+            });
+        });
+
+        // --- INTERAÇÃO DO MOUSE ---
+        window.addEventListener('mousemove', (e) => {
+            controls.autoRotate = false;
+            
+            // Atualiza posição do tooltip
+            tooltip.style.left = (e.clientX + 15) + 'px';
+            tooltip.style.top = (e.clientY + 15) + 'px';
+
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            
+            const intersects = raycaster.intersectObjects(interactiveObjects);
+
+            if (intersects.length > 0) {
+                const hitObj = intersects[0].object;
+                const zoneData = hitObj.userData.zone;
+                const hitZoneID = zoneData.id;
+
+                // Mostra Tooltip
+                tooltip.style.display = 'block';
+                tooltip.innerText = zoneData.label;
+
+                // Atualiza Footer
+                footerText.innerHTML = `Clique para ver indicadores de <span style="color:#00d2ff">${zoneData.label}</span>`;
+
+                if (activeZone !== hitZoneID) {
+                    activeZone = hitZoneID;
+                    document.body.style.cursor = 'pointer';
+                    
+                    // Reseta todos
+                    interactiveObjects.forEach(o => {
+                        if (!o.userData.isHitbox) o.userData.yTarget = o.userData.yBase;
+                    });
+                    
+                    // Levanta as peças da zona (menos a hitbox invisível)
+                    interactiveObjects.forEach(o => {
+                        if (o.userData.zone.id === activeZone && !o.userData.isHitbox) {
+                            o.userData.yTarget = o.userData.yBase + 5; 
+                        }
+                    });
+                }
+            } else {
+                // Mouse fora
+                if (activeZone) {
+                    activeZone = null;
+                    document.body.style.cursor = 'default';
+                    interactiveObjects.forEach(o => {
+                        if (!o.userData.isHitbox) o.userData.yTarget = o.userData.yBase;
+                    });
+                }
+                tooltip.style.display = 'none';
+                footerText.innerHTML = `Rotacione o modelo e <span>clique nas áreas</span> para ver os dados`;
+                controls.autoRotate = true;
+            }
+        });
+
+        window.addEventListener('click', () => {
+            if (activeZone) {
+                const zone = Object.values(ZONES).find(z => z.id === activeZone);
+                carregarDashboard(zone);
+            }
+        });
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            // Animação suave
+            interactiveObjects.forEach(obj => {
+                if (!obj.userData.isHitbox) { // Não anima a caixa invisível
+                    obj.position.y = THREE.MathUtils.lerp(obj.position.y, obj.userData.yTarget, 0.1);
+                }
+            });
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // --- LÓGICA DO DASHBOARD (Backend MySQL) ---
+        let charts = []; 
+
+        async function carregarDashboard(zone) {
+            const modal = document.getElementById('dashboard-modal');
+            const content = document.getElementById('modal-content');
+            const title = document.getElementById('modal-title');
+            
+            modal.style.display = 'block';
+            content.innerHTML = '<p style="text-align:center">Conectando ao banco de dados...</p>';
+            title.innerText = zone.label.toUpperCase(); // Usa o label bonito
+
+            charts.forEach(c => c.destroy());
+            charts = [];
+
+            try {
+                const req = await fetch(zone.url);
+                const data = await req.json();
+
+                // === FÁBRICA ===
+                if (zone.id === 'fabrica') {
+                    content.innerHTML = `
+                        <div class="grid grid-2">
+                            <div class="card">
+                                <h3>Produção (Top Itens)</h3>
+                                <div class="chart-box"><canvas id="c1"></canvas></div>
+                            </div>
+                            <div class="card">
+                                <h3>Status Máquinas</h3>
+                                <div class="chart-box"><canvas id="c2"></canvas></div>
+                            </div>
+                            <div class="card" style="grid-column: span 2;">
+                                <h3>Movimentação Recente</h3>
+                                <div class="chart-box" style="height: 200px;"><canvas id="c3"></canvas></div>
+                            </div>
+                        </div>`;
+                    
+                    criarGrafico('c1', 'bar', data.producao.map(d => d.nome), data.producao.map(d => d.qtd), 'Qtd');
+                    criarGrafico('c2', 'doughnut', data.maquinas.map(d => d.status), data.maquinas.map(d => d.qtd), 'Máquinas');
+                    criarGrafico('c3', 'line', data.movimentacao.map(d => d.tipo), data.movimentacao.map(d => d.qtd), 'Volume');
+                }
+                
+                // === LOGÍSTICA ===
+                else if (zone.id === 'logistica') {
+                    content.innerHTML = `
+                        <div class="grid grid-2">
+                            <div class="card">
+                                <h3>Top Fornecedores</h3>
+                                <div class="chart-box"><canvas id="c1"></canvas></div>
+                            </div>
+                            <div class="card">
+                                <h3>Materiais Comprados</h3>
+                                <table>
+                                    <tr><th>Material</th><th>Qtd Total</th></tr>
+                                    ${data.materiaisComprados.map(m => `<tr><td>${m.material}</td><td style="color:#00d2ff">${m.qtd}</td></tr>`).join('')}
+                                </table>
+                            </div>
+                        </div>`;
+
+                    criarGrafico('c1', 'bar', data.topFornecedores.map(f => f.nome), data.topFornecedores.map(f => f.contratos), 'Contratos');
+                }
+
+                // === GERAL ===
+                else if (zone.id === 'geral') {
+                    content.innerHTML = `
+                        <div class="grid grid-2">
+                            <div class="card">
+                                <h3>Perfil Cliente</h3>
+                                <div class="chart-box"><canvas id="c1"></canvas></div>
+                            </div>
+                            <div class="card">
+                                <h3>Vendas: Online vs Loja</h3>
+                                <div class="chart-box"><canvas id="c2"></canvas></div>
+                            </div>
+                            <div class="card" style="grid-column: span 2;">
+                                <h3>Vendas por Categoria</h3>
+                                <div class="chart-box"><canvas id="c3"></canvas></div>
+                            </div>
+                            <div class="card" style="grid-column: span 2;">
+                                <h3>Top 3 Produtos</h3>
+                                <table>
+                                    <tr><th>Produto</th><th>Total Vendido</th></tr>
+                                    ${data.topItens.map(i => `<tr><td>${i.nome}</td><td style="color:#00ff00">+${i.total}</td></tr>`).join('')}
+                                </table>
+                            </div>
+                        </div>`;
+
+                    criarGrafico('c1', 'pie', data.clientes.map(c => c.tipo), data.clientes.map(c => c.qtd), 'Clientes');
+                    criarGrafico('c2', 'doughnut', data.canais.map(c => c.canal), data.canais.map(c => c.qtd), 'Vendas');
+                    criarGrafico('c3', 'bar', data.tipoVenda.map(v => v.cat), data.tipoVenda.map(v => v.qtd), 'Unidades');
+                }
+
+            } catch (err) {
+                console.error(err);
+                content.innerHTML = `<p style="color:red; text-align:center;">Erro ao conectar API.<br>Verifique se o backend C# está rodando.</p>`;
+            }
+        }
+
+        function criarGrafico(id, type, labels, values, labelDados) {
+            const ctx = document.getElementById(id).getContext('2d');
+            const cores = ['#00d2ff', '#ff00ff', '#ffff00', '#00ff00', '#ff5555'];
+
+            const chart = new Chart(ctx, {
+                type: type,
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: labelDados,
+                        data: values,
+                        backgroundColor: cores,
+                        borderColor: '#1a1f29',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'right', labels: { color: 'white', boxWidth: 12 } }
+                    },
+                    scales: (type === 'bar' || type === 'line') ? {
+                        y: { ticks: { color: '#888' }, grid: { color: '#333' } },
+                        x: { ticks: { color: '#fff' }, grid: { display: false } }
+                    } : {}
+                }
+            });
+            charts.push(chart);
+        }
+
+        window.fecharModal = () => document.getElementById('dashboard-modal').style.display = 'none';
+        window.addEventListener('resize', () => { camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+    </script>
+</body>
+</html>
