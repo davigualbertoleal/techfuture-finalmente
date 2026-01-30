@@ -10,16 +10,16 @@ Antes de abrir o terminal, certifique-se de que os seguintes softwares estejam i
 
 * .NET SDK 8.0
   Necessário para executar aplicações em C#.
-  Link: [https://dotnet.microsoft.com/en-us/download/dotnet/8.0](https://dotnet.microsoft.com/en-us/download/dotnet/8.0)
+  Link: https://dotnet.microsoft.com/en-us/download/dotnet/8.0
   Versões mais recentes (como 10.0) também funcionam, porém não são recomendadas.
 
 * Visual Studio Code (VS Code)
   Utilizado para editar o código-fonte.
-  Link: [https://code.visualstudio.com/](https://code.visualstudio.com/)
+  Link: https://code.visualstudio.com/
 
 * XAMPP
   Utilizado para o banco de dados MySQL.
-  Link: [https://www.apachefriends.org/pt_br/index.html](https://www.apachefriends.org/pt_br/index.html)
+  Link: https://www.apachefriends.org/pt_br/index.html
 
 ==================================================
 
@@ -123,3 +123,4 @@ dotnet add package Pomelo.EntityFrameworkCore.MySql
 
 OBSERVAÇÃO IMPORTANTE:
 Não copie os comandos com aspas.
+
